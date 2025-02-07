@@ -1,0 +1,7 @@
+{
+  "name": "minimal-job",
+  "existing_cluster_id": "<CLUSTER-ID>",
+  "notebook_task": {
+    "notebook_path": "/Shared/minimal_notebook"
+  }
+}

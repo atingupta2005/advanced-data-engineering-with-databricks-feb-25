@@ -1,0 +1,91 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'  # ✅ Microsoft-hosted agent retained
+
+steps:
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '3.11'
+    disableDownloadFromRegistry: true
+    addToPath: true
+    architecture: 'x64'
+
+- script: |
+    python -m venv venv
+    source venv/bin/activate
+    python --version
+  displayName: 'Setup Python Virtual Environment'
+
+- script: |
+    source venv/bin/activate
+    python -m pip install --upgrade pip
+  displayName: 'Upgrade Pip'
+
+- script: |
+    source venv/bin/activate
+    pip install databricks-cli==0.18
+    databricks --version
+  displayName: 'Install Databricks CLI'
+
+- script: |
+    source venv/bin/activate
+    export DATABRICKS_HOST=""
+    export DATABRICKS_TOKEN=""
+
+    # ✅ Force CLI to use API 2.1 for compatibility
+    databricks jobs configure --version=2.1
+
+    # ✅ Verify authentication (debugging step)
+    databricks workspace list
+  displayName: 'Check Databricks Authentication'
+
+- script: |
+    source venv/bin/activate
+    export DATABRICKS_HOST=""
+    export DATABRICKS_TOKEN=""
+
+    # ✅ Delete existing Databricks workspace folder before deployment
+    echo "Deleting existing Databricks folder..."
+    databricks workspace rm /test --recursive || true
+  displayName: 'Delete Old Workspace Folder'
+  continueOnError: true
+
+- script: |
+    source venv/bin/activate
+    export DATABRICKS_HOST=""
+    export DATABRICKS_TOKEN=""
+
+    # ✅ Deploy Python scripts to Databricks workspace
+    echo "Deploying Python scripts to Databricks workspace..."
+    databricks workspace import_dir $(System.DefaultWorkingDirectory)/notebooks /test
+  displayName: 'Deploy Python Scripts to Databricks'
+
+- script: |
+    source venv/bin/activate
+    export DATABRICKS_HOST=""
+    export DATABRICKS_TOKEN=""
+
+    # ✅ Fix Job JSON format issue
+    JOB_CONFIG=$(cat <<EOF
+    {
+      "name": "minimal-job",
+      "existing_cluster_id": "0206-011505-jqm2nfrv",
+      "python_task": {
+        "python_file": "/test/minimal_notebook.py"
+      }
+    }
+    EOF
+    )
+
+    # ✅ Validate JSON before sending it
+    if [[ -z "$JOB_CONFIG" ]]; then
+      echo "❌ Error: JOB_CONFIG is empty!"
+      exit 1
+    fi
+
+    echo "Job Config: $JOB_CONFIG"  # Debugging
+
+    databricks jobs run-now --job-id 588683491941061
+  displayName: 'Deploy & Run Databricks Job'

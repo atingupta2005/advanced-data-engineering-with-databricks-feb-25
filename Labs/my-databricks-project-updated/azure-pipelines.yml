@@ -1,0 +1,50 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '3.x'
+  displayName: 'Use Python 3'
+
+- script: |
+    pip install databricks-cli
+  displayName: 'Install Databricks CLI'
+
+- script: |
+    # Configure the Databricks CLI with the host and token provided as pipeline variables
+    mkdir -p ~/.databricks
+    echo "[DEFAULT]" > ~/.databricks/config
+    echo "host = $(DATABRICKS_HOST)" >> ~/.databricks/config
+    echo "token = $(DATABRICKS_TOKEN)" >> ~/.databricks/config
+  displayName: 'Configure Databricks CLI'
+
+- script: |
+    # Import the notebook to /Shared
+    databricks workspace import notebooks/minimal_notebook.py /Shared/minimal_notebook --language PYTHON --overwrite
+
+    # Define cluster configuration inline
+    CLUSTER_CONFIG=$(cat <<EOF
+    {
+      "cluster_name": "minimal-cluster",
+      "spark_version": "15.4.x-scala2.12",
+      "node_type_id": "Standard_D4ds_v5",
+      "num_workers": 1
+    }
+    EOF
+    )
+
+    # Create or update the cluster
+    echo "$CLUSTER_CONFIG" | databricks clusters create --json ||     echo "$CLUSTER_CONFIG" | databricks clusters edit --json
+
+    # Create or update the job
+    databricks jobs create --json-file jobs/job_config.json ||     databricks jobs reset --json-file jobs/job_config.json
+
+    # Trigger the job: find the job ID by name and run it
+    JOB_ID=$(databricks jobs list | grep "minimal-job" | awk '{print $1}')
+    echo "Job ID is $JOB_ID"
+    databricks jobs run-now --job-id $JOB_ID
+  displayName: 'Deploy & Run Databricks Job'
